@@ -4,7 +4,7 @@
     C++ port by Sightem @ https://github.com/Sightem
     https://github.com/cs127/mptsh-cpp
 
-    version 0.0.0, (port of Java version 0.2.4)
+    version 0.0.0p1, (port of Java version 0.2.4)
     2022-11-30
  */
 
@@ -15,9 +15,12 @@
 #include <sstream>
 #include <regex>
 #include <cstring>
+#include "ClipboardXX/include/clipboardxx.hpp"
+
+#if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
 #include <chrono>
 #include <thread>
-#include "ClipboardXX/include/clipboardxx.hpp"
+#endif
 
 struct CLIOptions {
     bool HELP = false;
@@ -154,7 +157,9 @@ int main(int argc, char* argv[]) {
     else {
         clipboardxx::clipboard clipboard;
         clipboard << Output;
+#if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
+#endif
     }
 }
 
