@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.18)
+project(mptsh-cpp)
+add_executable(mptsh mptsh.cpp)
+add_subdirectory(ClipboardXX)
+target_link_libraries(mptsh ClipboardXX)
