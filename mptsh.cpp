@@ -4,8 +4,13 @@
     C++ port by Sightem @ https://github.com/Sightem
     https://github.com/cs127/mptsh-cpp
 
-    version 0.0.0p1, (port of Java version 0.2.4)
+    version 0.0.1, (port of Java version 0.2.4)
     2022-11-30
+
+    Contributors:
+    * cs127 (Original Java code)            https://cs127.github.io
+    * Sightem (C++ port)                    https://github.com/Sightem
+    * Nowilltolife (code improvements)      https://github.com/Nowilltolife
  */
 
 #include <iostream>
