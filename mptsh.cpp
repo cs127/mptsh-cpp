@@ -15,9 +15,14 @@
 #include <sstream>
 #include <regex>
 #include <cstring>
-#include "ClipboardXX/include/clipboardxx.hpp"
+#include <numeric>
+#include "clipboardxx.hpp"
 
-#if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#define _WIN_
+#endif
+
+#if !defined(_WIN_)
 #include <chrono>
 #include <thread>
 #endif
@@ -28,6 +33,11 @@ struct CLIOptions {
     bool USE_STDOUT = false;
     bool AUTO_MARKDOWN = false;
     bool REVERSE_MODE = false;
+};
+
+struct Format {
+    bool FORMAT_M : 1;
+    bool FORMAT_S : 1;
 };
 
 const std::string HELP_MESSAGE =
@@ -49,13 +59,13 @@ const std::string HELP_MESSAGE =
 
 const int DEFAULT_COLORS[] = { 7, 5, 4, 2, 6, 3, 1, 7 };
 const std::string HEADER = "ModPlug Tracker ";
-std::vector<std::string> FORMATS_M = { "MOD", " XM" };
-std::vector<std::string> FORMATS_S = { "S3M", " IT", "MPT" };
+const char* FORMATS_M[] = { "MOD", " XM" };
+const char* FORMATS_S[] = { "S3M", " IT", "MPT" };
 
 CLIOptions ParseCommandLine(int argc, char* argv[]);
 std::vector<std::string> Split(const std::string& s, char delimiter);
 std::string GetSGRCode(int color);
-int GetEffectCmdColor(char c, std::string f);
+int GetEffectCmdColor(char c, Format format);
 int GetVolumeCmdColor(char c);
 int GetInstrumentColor(char c);
 int GetNoteColor(char c);
@@ -98,14 +108,8 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> Lines;
     if (Options.USE_STDIN) {
         std::string Line;
-        while (std::getline(std::cin, Line)) {
-            Lines.push_back(Line);
-            if (Line == "") break;
-        }
-        for (int i = 0; i < Lines.size(); i++) {
-            Input += Lines[i];
-            if (i != Lines.size() - 1) Input += '\n';
-        }
+        while (std::getline(std::cin, Line) && !Line.empty()) Lines.push_back(Line);
+        Input = std::accumulate(Lines.begin(), Lines.end(), std::string(), [](std::string a, std::string b) { return a + b + '\n'; });
     }
     else {
         clipboardxx::clipboard clipboard;
@@ -113,12 +117,16 @@ int main(int argc, char* argv[]) {
     }
 
     // Try to get the module format and check if the data is valid OpenMPT pattern data
-    std::string Format;
-    Format = Input.substr(HEADER.length(), 3);
-    if (!(std::find(FORMATS_M.begin(), FORMATS_M.end(), Format) != FORMATS_M.end() || std::find(FORMATS_S.begin(), FORMATS_S.end(), Format) != FORMATS_S.end())) {
-        std::cout << "Input does not contain OpenMPT pattern data." << std::endl;
-        return 2;
+    std::string module = Input.substr(HEADER.length(), 3);
+    // last 3 characters of the header are the module format
+    Format format;
+    format.FORMAT_M = std::find(std::begin(FORMATS_M), std::end(FORMATS_M), module) != std::end(FORMATS_M);
+    format.FORMAT_S = std::find(std::begin(FORMATS_S), std::end(FORMATS_S), module) != std::end(FORMATS_S);
+    if (!format.FORMAT_M && !format.FORMAT_S) {
+        if (!Options.USE_STDOUT) std::cout << "Invalid OpenMPT pattern data." << std::endl;
+        return 1;
     }
+    
 
     // Remove colors if the input is already syntax-highlighted
     Input = std::regex_replace(Input, std::regex("\u001B\\[\\d+(;\\d+)*m"), "");
@@ -137,7 +145,7 @@ int main(int argc, char* argv[]) {
             if (RelPos == 4) Color = Colors[GetInstrumentColor(c)];
             if (RelPos == 6) Color = Colors[GetVolumeCmdColor(c)];
             if (RelPos >= 9) {
-                if (!(RelPos % 3)) Color = Colors[GetEffectCmdColor(c, Format)];
+                if (!(RelPos % 3)) Color = Colors[GetEffectCmdColor(c, format)];
                 if (RelPos % 3 && c == '.' && Input[i - (RelPos % 3)] != '.') c = '0';
             }
             if (!isWhitespace(c)) {
@@ -157,14 +165,15 @@ int main(int argc, char* argv[]) {
     else {
         clipboardxx::clipboard clipboard;
         clipboard << Output;
-#if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
+#if !defined(_WIN_)
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        // This is a hack to make sure the clipboard is updated before the program exits
 #endif
     }
 }
 
 bool StartsWith(const char* pre, const char* str) {
-    size_t lenpre = strlen(pre), lenstr = strlen(str);
+    size_t lenpre = strnlen(pre, 256), lenstr = strnlen(str, 256);
     return lenstr < lenpre ? false : !strncmp(pre, str, lenpre);
 }
 
@@ -172,11 +181,11 @@ CLIOptions ParseCommandLine(int argc, char* argv[]) {
     CLIOptions options;
     for (int i = 1; i < argc; i++) {
         if (StartsWith("--", argv[i])) {
-            options.HELP          = !strcmp(argv[i], "--help");
-            options.USE_STDIN     = !strcmp(argv[i], "--stdin");
-            options.USE_STDOUT    = !strcmp(argv[i], "--stdout");
-            options.AUTO_MARKDOWN = !strcmp(argv[i], "--markdown");
-            options.REVERSE_MODE  = !strcmp(argv[i], "--reverse");
+            options.HELP          = !strncmp(argv[i], "--help", 6);
+            options.USE_STDIN     = !strncmp(argv[i], "--stdin", 7);
+            options.USE_STDOUT    = !strncmp(argv[i], "--stdout", 8);
+            options.AUTO_MARKDOWN = !strncmp(argv[i], "--markdown", 10);
+            options.REVERSE_MODE  = !strncmp(argv[i], "--reverse", 9);
         }
         else if (StartsWith("-", argv[i])) {
             for (int j = 1; j < strlen(argv[i]); j++) {
@@ -197,9 +206,7 @@ std::vector<std::string> Split(const std::string& s, char delimiter) {
     std::vector<std::string> tokens;
     std::string token;
     std::istringstream tokenStream(s);
-    while (std::getline(tokenStream, token, delimiter)) {
-        tokens.push_back(token);
-    }
+    while (std::getline(tokenStream, token, delimiter)) tokens.push_back(token);
     return tokens;
 }
 
@@ -229,9 +236,9 @@ int GetVolumeCmdColor(char c) {
     return color;
 }
 
-int GetEffectCmdColor(char c, std::string f) {
+int GetEffectCmdColor(char c, Format format) {
     int color = 0;
-    if (std::find(FORMATS_S.begin(), FORMATS_S.end(), f) != FORMATS_S.end()) { // S3M/IT/MPTM
+    if (format.FORMAT_S) { // S3M/IT/MPTM
         switch (c) {
             case 'D': case 'K': case 'L': case 'M': case 'N': case 'R':             color = 3; break; // Volume
             case 'P': case 'X': case 'Y':                                           color = 4; break; // Panning
@@ -239,7 +246,7 @@ int GetEffectCmdColor(char c, std::string f) {
             case 'A': case 'B': case 'C': case 'T': case 'V': case 'W':             color = 6; break; // Global
         }
     }
-    else if (std::find(FORMATS_M.begin(), FORMATS_M.end(), f) != FORMATS_M.end()) { // MOD/XM
+    else if (format.FORMAT_M) { // MOD/XM
         switch (c) {
             case '5': case '6': case '7': case 'A': case 'C':   color = 3; break; // Volume
             case '8': case 'P': case 'Y':                       color = 4; break; // Panning
